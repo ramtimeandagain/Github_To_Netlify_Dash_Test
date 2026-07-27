@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Check — 123.csv</title>
+<style>
+  :root{
+    --paper: #EEECE3;
+    --paper-line: #D8D5C8;
+    --ink: #1F2B22;
+    --ink-soft: #55604F;
+    --stamp: #B8442F;
+    --stamp-soft: #B8442F33;
+    --ok: #3B6E4A;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    min-height:100vh;
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--paper-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--paper-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color:var(--ink);
+    font-family: var(--mono);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  body{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:32px;
+  }
+
+  .sheet{
+    width:100%;
+    max-width:560px;
+    background:#F7F6F0;
+    border:1px solid var(--ink);
+    box-shadow: 6px 6px 0 var(--ink-soft);
+    position:relative;
+  }
+
+  .sheet-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    padding:18px 22px;
+    border-bottom:1px dashed var(--ink-soft);
+  }
+
+  .sheet-head .title{
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+
+  .sheet-head .id{
+    font-size:11px;
+    color:var(--ink-soft);
+  }
+
+  .readout{
+    padding:44px 22px 30px;
+    text-align:center;
+    border-bottom:1px dashed var(--ink-soft);
+    position:relative;
+  }
+
+  .readout .label{
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:14px;
+  }
+
+  .readout .value{
+    font-size:clamp(52px, 14vw, 84px);
+    font-weight:700;
+    line-height:1;
+    letter-spacing:-.02em;
+  }
+
+  .readout .value.pending{ color:var(--ink-soft); font-weight:400; }
+  .readout .value.error{ color:var(--stamp); font-weight:400; font-size:20px; }
+
+  .stamp{
+    position:absolute;
+    top:14px;
+    right:20px;
+    width:78px;
+    height:78px;
+    border:3px solid var(--stamp);
+    border-radius:50%;
+    color:var(--stamp);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    transform:rotate(-14deg);
+    opacity:0;
+    transition:opacity .4s ease;
+  }
+  .stamp.show{ opacity:.88; }
+  .stamp.fail{ border-color:var(--ink-soft); color:var(--ink-soft); }
+
+  .log{
+    padding:16px 22px 20px;
+    font-size:12px;
+    color:var(--ink-soft);
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+
+  .log-row{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+  }
+
+  .log-row .k{ color:var(--ink-soft); }
+  .log-row .v{ color:var(--ink); text-align:right; }
+
+  .dot{
+    display:inline-block;
+    width:6px;
+    height:6px;
+    border-radius:50%;
+    background:var(--ok);
+    margin-right:6px;
+    position:relative;
+    top:-1px;
+  }
+  .dot.fail{ background:var(--stamp); }
+
+  footer{
+    text-align:center;
+    font-size:10px;
+    color:var(--ink-soft);
+    margin-top:14px;
+    letter-spacing:.04em;
+  }
+
+  @media (prefers-reduced-motion: no-preference){
+    .stamp.show{ animation: settle .5s ease; }
+    @keyframes settle{
+      0%{ transform:rotate(-28deg) scale(1.15); opacity:0; }
+      100%{ transform:rotate(-14deg) scale(1); opacity:.88; }
+    }
+  }
+</style>
+</head>
+<body>
+
+  <div>
+    <div class="sheet">
+      <div class="sheet-head">
+        <span class="title">Pipeline check</span>
+        <span class="id">123.csv</span>
+      </div>
+
+      <div class="readout">
+        <div class="label">Current value from repo</div>
+        <div class="value pending" id="value">reading…</div>
+        <div class="stamp" id="stamp">checking</div>
+      </div>
+
+      <div class="log">
+        <div class="log-row">
+          <span class="k"><span class="dot" id="statusDot"></span>Status</span>
+          <span class="v" id="statusText">contacting file…</span>
+        </div>
+        <div class="log-row">
+          <span class="k">Fetched at</span>
+          <span class="v" id="fetchedAt">—</span>
+        </div>
+        <div class="log-row">
+          <span class="k">Source</span>
+          <span class="v">/123.csv (this deploy)</span>
+        </div>
+      </div>
+    </div>
+    <footer>Refreshes on load · confirms GitHub → Netlify deploy is live</footer>
+  </div>
+
+<script>
+  const valueEl = document.getElementById('value');
+  const stampEl = document.getElementById('stamp');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const fetchedAt = document.getElementById('fetchedAt');
+
+  function now() {
+    return new Date().toLocaleString(undefined, {
+      hour12: false, year:'numeric', month:'2-digit', day:'2-digit',
+      hour:'2-digit', minute:'2-digit', second:'2-digit'
+    });
+  }
+
+  fetch('123.csv', { cache: 'no-store' })
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    })
+    .then(text => {
+      const clean = text.trim();
+      valueEl.textContent = clean || '(empty)';
+      valueEl.classList.remove('pending');
+
+      stampEl.textContent = 'verified';
+      stampEl.classList.add('show');
+
+      statusText.textContent = 'file fetched successfully';
+      fetchedAt.textContent = now();
+    })
+    .catch(err => {
+      valueEl.textContent = 'no data';
+      valueEl.classList.remove('pending');
+      valueEl.classList.add('error');
+
+      stampEl.textContent = 'not found';
+      stampEl.classList.add('show', 'fail');
+
+      statusDot.classList.add('fail');
+      statusText.textContent = 'fetch failed: ' + err.message;
+      fetchedAt.textContent = now();
+    });
+</script>
+
+</body>
+</html>
